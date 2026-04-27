@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Keringő rendszer - több tábla</title>
+<style>
+  body { text-align: center; font-family: Arial; }
+  canvas { border: 1px solid black; margin-bottom: 10px;}
+  button { margin: 2px; }
+</style>
+</head>
+<body>
+
+<h2>Keringő objektumok - Több tábla</h2>
+<canvas id="game" width="500" height="500"></canvas>
+<p>Pontszám: <span id="score">0</span></p>
+
+<div>
+  <button onclick="setType('red')">P</button>
+  <button onclick="setType('yellow')">S</button>
+  <button onclick="setType('green')">Z</button>
+</div>
+
+<h3>Menü - válassz táblát</h3>
+<div id="boardMenu"></div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const gridSize = 25;
+const cellSize = canvas.width / gridSize;
+
+// több tábla létrehozása
+const NUM_BOARDS = 10;
+let boards = [];
+for(let i=0;i<NUM_BOARDS;i++) boards.push([]);
+
+let currentBoardIndex = 0;
+let currentType = "red";
+let spaceships = [];
+
+// menü gombok
+const boardMenuDiv = document.getElementById("boardMenu");
+for(let i=0;i<NUM_BOARDS;i++){
+  const btn = document.createElement("button");
+  btn.innerText = `Tábla ${i+1}`;
+  btn.onclick = ()=>currentBoardIndex=i;
+  boardMenuDiv.appendChild(btn);
+}
+
+// kis kék űrhajók létrehozása
+for(let i=0;i<50;i++){
+  spaceships.push({
+    x: Math.random()*gridSize,
+    y: Math.random()*gridSize,
+    vx: 0,
+    vy: 0,
+    size: 0.12
+  });
+}
+
+function setType(t){ currentType=t; }
+
+canvas.addEventListener("click",(e)=>{
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / cellSize;
+  const y = (e.clientY - rect.top) / cellSize;
+
+  boards[currentBoardIndex].push({
+    x, y,
+    vx: (Math.random()-0.5)*0.2,
+    vy: (Math.random()-0.5)*0.2,
+    type: currentType,
+    mass: currentType==='red'?100:currentType==='yellow'?10:20
+  });
+});
+
+function drawGrid(){
+  ctx.strokeStyle="#ddd";
+  for(let i=0;i<=gridSize;i++){
+    ctx.beginPath();
+    ctx.moveTo(i*cellSize,0);
+    ctx.lineTo(i*cellSize,canvas.height);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0,i*cellSize);
+    ctx.lineTo(canvas.width,i*cellSize);
+    ctx.stroke();
+  }
+}
+
+function drawObjects(){
+  const objects = boards[currentBoardIndex];
+  for(let o of objects){
+    ctx.beginPath();
+    ctx.fillStyle=o.type;
+    ctx.arc(o.x*cellSize,o.y*cellSize,cellSize/3,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function drawSpaceships(){
+  for(let s of spaceships){
+    ctx.beginPath();
+    ctx.fillStyle="blue";
+    ctx.arc(s.x*cellSize, s.y*cellSize, cellSize*s.size, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function update(){
+  const objects = boards[currentBoardIndex];
+  const MAX_SPEED = 0.1;
+  const GRAVITY_RADIUS = 3;
+
+  // ütközés + fekete golyó
+  for(let i=0;i<objects.length;i++){
+    for(let j=i+1;j<objects.length;j++){
+      let a=objects[i],b=objects[j];
+      let dx=b.x-a.x,dy=b.y-a.y;
+      let dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<0.05){
+        objects.push({
+          x:(a.x+b.x)/2,
+          y:(a.y+b.y)/2,
+          vx:(a.vx+b.vx)*0.3,
+          vy:(a.vy+b.vy)*0.3,
+          type:"black",
+          mass:15
+        });
+        objects.splice(j,1);
+        objects.splice(i,1);
+        return;
+      }
+    }
+  }
+
+  for(let i=0;i<objects.length;i++){
+    let a=objects[i];
+
+    for(let j=0;j<objects.length;j++){
+      if(i===j) continue;
+      let b=objects[j];
+      let dx=b.x-a.x, dy=b.y-a.y;
+      let dist=Math.sqrt(dx*dx+dy*dy)+0.001;
+
+      if(dist>GRAVITY_RADIUS) continue;
+      let force=Math.min(b.mass/(dist*dist),0.01);
+      a.vx+=(dx/dist)*force;
+      a.vy+=(dy/dist)*force;
+      if(dist>0.5){
+        a.vx+=(-dy/dist)*0.01;
+        a.vy+=(dx/dist)*0.01;
+      }
+    }
+
+    // féregjárat nagyon kis eséllyel
+    if(Math.random()<0.001){
+      const newBoard=Math.floor(Math.random()*NUM_BOARDS);
+      if(newBoard!==currentBoardIndex){
+        boards[newBoard].push({...a}); // áthelyezés másik táblára
+        objects.splice(i,1);
+        i--;
+        continue;
+      }
+    }
+
+    // sebesség limit
+    let speed=Math.sqrt(a.vx*a.vx+a.vy*a.vy);
+    if(speed>MAX_SPEED){
+      a.vx=(a.vx/speed)*MAX_SPEED;
+      a.vy=(a.vy/speed)*MAX_SPEED;
+    }
+
+    a.x+=a.vx;
+    a.y+=a.vy;
+
+    if(a.x<0||a.x>gridSize) a.vx*=-1;
+    if(a.y<0||a.y>gridSize) a.vy*=-1;
+  }
+
+  // űrhajók mozgatása
+  const boardObjects = boards[currentBoardIndex];
+  for(let s of spaceships){
+    let fx=0, fy=0;
+    for(let o of boardObjects){
+      let dx=o.x - s.x;
+      let dy=o.y - s.y;
+      let dist = Math.sqrt(dx*dx + dy*dy)+0.01;
+      if(dist<5){
+        let force = 0.001;
+        fx += (-dy/dist)*force;
+        fy += (dx/dist)*force;
+      }
+    }
+
+    s.vx += fx;
+    s.vy += fy;
+
+    let speed = Math.sqrt(s.vx*s.vx + s.vy*s.vy);
+    if(speed>0.02){
+      s.vx = (s.vx/speed)*0.02;
+      s.vy = (s.vy/speed)*0.02;
+    }
+
+    s.x += s.vx;
+    s.y += s.vy;
+
+    if(s.x<0||s.x>gridSize) s.vx*=-1;
+    if(s.y<0||s.y>gridSize) s.vy*=-1;
+  }
+
+  updateScore();
+}
+
+function updateScore(){
+  const objects=boards[currentBoardIndex];
+  let score=0;
+  let hasBlack=objects.some(o=>o.type==="black");
+  if(!hasBlack){
+    for(let o of objects) if(o.type!=="black") score++;
+  }else score=0;
+  document.getElementById("score").innerText=score;
+}
+
+function loop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawGrid();
+  update();
+  drawObjects();
+  drawSpaceships();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
